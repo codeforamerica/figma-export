@@ -4,15 +4,14 @@ const config = require('./.config.js');
 const documentKey = '11741:224247'; // Need to replace this with something manageable
 
 /**
- * Get all visible instances of a component by name.
+ * [async description]
  *
- * @param   {String}  req            The API request URL
- * @param   {String}  componentName  The name of the component to retrieve
- * @param   {String}  figmaToken     The Figma personal access token to authenticate the request
+ * @param   {String}  req         The API request URL
+ * @param   {String}  figmaToken  The Figma personal access token to authenticate the request
  *
- * @return  {Array}                  A list of visible component instances
+ * @return  {Object}              The request response JSON object
  */
-async function findComponentByName(req, componentName, figmaToken) {
+async function fetchFigma(req, figmaToken) {
   console.log(`🙇 Requesting data from Figma ${req}`);
 
   const response = await fetch(req, {
@@ -21,13 +20,25 @@ async function findComponentByName(req, componentName, figmaToken) {
     }
   });
 
-  const data = await response.json();
+  let data = await response.json();
 
   console.log(`✨ Request successful!`);
 
+  return data;
+}
+
+/**
+ * Get all visible instances of a component by name.
+ *
+ * @param   {String}  data           JSON to search
+ * @param   {String}  componentName  The name of the component to retrieve
+ *
+ * @return  {Array}                  A list of visible component instances
+ */
+async function findComponentByName(data, componentName) {
   let questions = [];
 
-  console.log(`🔍 Finding visible components in the request`);
+  console.log(`🔍 Finding visible ${componentName} components in the request`);
 
   function searchNodes(node) {
     if (false != node.visible && node.type === 'INSTANCE' && node.name.includes(componentName)) {
@@ -41,6 +52,32 @@ async function findComponentByName(req, componentName, figmaToken) {
   searchNodes(data.nodes[documentKey].document);
 
   return questions;
+}
+
+/**
+ * Recursively search for a text layer by its original label and return the characters in the layer
+ *
+ * @param   {String}  data           JSON to search
+ * @param   {String}  componentName  The name of the text layer to retrieve
+ *
+ * @return  {Array}                  All of the text layer contents that match the layer name
+ */
+async function findLayersByName(data, layerName) {
+  let layers = [];
+
+  function searchLayers(node) {
+    if (node.type === 'TEXT' && node.componentPropertyReferences && node.componentPropertyReferences.characters.includes(layerName)) {
+      layers.push(node.characters);
+    }
+
+    if (node.children) {
+      node.children.forEach(searchLayers);
+    }
+  }
+
+  searchLayers(data);
+
+  return layers;
 }
 
 /**
@@ -67,7 +104,9 @@ function getProp(obj, prop) {
  * @param   {String}  figmaToken     The Figma personal access token to authenticate the request
  */
 async function fetchComponentInstances(req, componentName, figmaToken) {
-  let questions = await findComponentByName(req, componentName, figmaToken);
+  let data = await fetchFigma(req,figmaToken);
+
+  let questions = await findComponentByName(data, componentName);
 
   // Write our data so far to check.
   console.log(`📝 Writing full data copy to ${config.COPY}`);
@@ -81,46 +120,14 @@ async function fetchComponentInstances(req, componentName, figmaToken) {
   for (let i = 0; i < questions.length; i++) {
     let line = [];
 
-    // console.dir(questions[i].componentProperties);
-
     // Replace with property configuration
     // ID, Question, Flow, Flow Code(?), Section Code(?), Question Code(?), Question Number(?), Programs, Required
-    line.push(getProp(questions[i].componentProperties, '🟣 ID').replace(/\n/g, ' '));
+    line.push(getProp(questions[i].componentProperties, '🟣 ID').replace(/\n/g, ' | '));
     line.push(getProp(questions[i].componentProperties, '🔴 Required'));
 
     // Question Text
-    // Need to inspect children of questions[i].componentProperties;
-
-    // for (const [key, value] of Object.entries(questions[i].componentProperties)) {
-    //   // Write a new line to the string that includes
-    //   // ID, Question, Flow, Flow Code(?), Section Code(?), Question Code(?), Question Number(?), Programs, Required
-
-    //   // Question text
-    //   // if (key.includes('🔘 UI Element')) {
-    //   //   console.dir(value);
-    //   // }
-
-    //   for (let index = 0; index < questions[i].children.length; index++) {
-    //     const element = questions[i].children[index];
-
-    //     if (typeof element.componentPropertyReferences.mainComponent != 'undefined' && element.componentPropertyReferences.mainComponent.includes('🔘 UI Element')) {
-    //       // console.dir(element);
-
-    //       // for (let c = 0; c < element['children'].length; c++) {
-    //       //   // const element = array[index];
-    //       //   // console.dir(element['children'][c]);
-    //       //   if (element['children'][c].name === 'Text input label') {
-    //       //     console.dir(element['children'][c]);
-    //       //   }
-
-    //       //   break;
-    //       // }
-    //       // if (typeof element.componentProperties != 'undefined') {
-    //       //   console.dir( getProp(element.componentProperties, 'Text input label') );
-    //       // }
-    //     }
-    //   }
-    // }
+    let question = await findLayersByName(questions[i], 'Text input label');
+    line.push(question.join(' | '));
 
     body += line.join(', ') + '\n';
   }
