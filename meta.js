@@ -113,7 +113,7 @@ async function fetchComponentInstances(req, componentName, figmaToken) {
 
   fs.writeFile(config.COPY, JSON.stringify(questions), 'utf-8', () => {});
 
-  let body = 'ID, Required\n';
+  let body = 'ID, Required, Question\n';
 
   console.log(`🛠️  Building export`);
 
