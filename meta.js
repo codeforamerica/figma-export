@@ -1,5 +1,9 @@
 const fs = require('fs');
-const config = require('./.config.js');
+const path = require('path');
+
+const configPath = path.resolve('./.config.js');
+delete require.cache[configPath];
+const config = require(configPath);
 
 let DATA = [];
 
@@ -39,22 +43,36 @@ async function fetchFigma(req, figmaToken) {
  * @return  {Array}                  A list of visible component instances
  */
 async function findComponentByName(data, page, componentName) {
-  let questions = [];
+  let components = [];
+  let nesting = [];
+  let pageData = data.nodes[page.ID.split('-').join(':')];
+  let topLevel = pageData.document;
 
   console.log(`🔍 Finding visible ${componentName} components in the request`);
 
-  function searchNodes(node) {
+  let searchNodes = (node) => {
+    if (node.type === 'FRAME') {
+      nesting.push(node.name);
+    }
+
     if (false != node.visible && node.type === 'INSTANCE' && node.name.includes(componentName)) {
-      questions.push(node);
+      let nodeCopy = {...node};
+
+      nodeCopy.nesting = nesting;
+
+      components.push(nodeCopy);
     } else if (node.children) {
       node.children.forEach(searchNodes);
     }
   }
 
-  // Need to replace documentKey with something manageable
-  searchNodes(data.nodes[page.split('-').join(':')].document);
+  for (let index = 0; index < topLevel.children.length; index++) {
+    nesting = [pageData.document.name];
 
-  return questions;
+    searchNodes(topLevel.children[index]);
+  }
+
+  return components;
 }
 
 /**
@@ -101,6 +119,15 @@ function getProp(obj, prop) {
   }
 }
 
+function cleanText(str) {
+  return str.replace(/\n/g, ' ')
+    .replace(/\r/g, ' ')
+    .replace(/[\u2028]/g, ' ')
+    .replace(/(–)\1+/g, '$1')
+    .split(' – ')
+    .join('; ');
+}
+
 /**
  * Get component instances and build data object for export. Writes files locally.
  *
@@ -117,37 +144,40 @@ async function fetchComponentInstances(req, page, componentName, figmaToken) {
   // Write our data so far to check.
   console.log(`📝 Writing full data copy to ${config.COPY}`);
 
-  fs.writeFile(config.COPY, JSON.stringify(questions), 'utf8', () => {});
+  fs.writeFile(config.COPY, JSON.stringify(data), 'utf8', () => {});
 
-  let body = 'ID, Required, Question, Current\n';
+  let body = config.HEADINGS.join(config.DELIMITER) + '\n';
 
-  console.log(`🛠️  Building export`);
+  console.log(`🛠️  Building export and populating the following columns; ${config.HEADINGS.join(', ')}`);
 
   for (let i = 0; i < questions.length; i++) {
     let line = [];
 
     // Replace with property configuration
-    // ID, Question, Flow, Flow Code(?), Section Code(?), Question Code(?), Question Number(?), Programs, Required
-    line.push(getProp(questions[i].componentProperties, '🟣 ID').replace(/\n/g, ' | '));
+    line.push(getProp(questions[i].componentProperties, '🟣 ID').replace(/\n/g, '; '));
     line.push(getProp(questions[i].componentProperties, '🔴 Required'));
 
     // Question Text
     let question = await findLayersByName(questions[i], 'Text input label');
-    line.push(question.join(' | '));
+    line.push(question.join('; '));
 
+    // Current Question
     let current = await findLayersByName(questions[i], 'Question (Current)');
+    let currentCharacters = cleanText(current[0]);
+    line.push((currentCharacters === 'Current: Last name') ? '' : currentCharacters);
 
-    let currentCharacters = current[0]
-      .replace(/\n/g, ' ')
-      .replace(/\r/g, ' ')
-      .replace(/[\u2028]/g, ' ')
-      .replace(/(–)\1+/g, '$1')
-      .split(' – ')
-      .join(' | ');
+    // No Change
+    let noChange = await findLayersByName(questions[i], 'Question (No Change)');
+    let noChangeCharacters = cleanText(noChange[0]);
+    line.push((noChangeCharacters === 'No Change: Last name') ? '' : noChangeCharacters);
 
-    line.push(currentCharacters);
+    // Flow
+    line.push(questions[i].nesting[0]);
 
-    body += line.join(', ') + '\n';
+    // Section
+    line.push(questions[i].nesting[1]);
+
+    body += line.join(config.DELIMITER) + '\n';
   }
 
   console.log(`✨ Writing export to ${config.EXPORT}`);
@@ -156,8 +186,7 @@ async function fetchComponentInstances(req, page, componentName, figmaToken) {
 }
 
 // Need to replace this with multiple requests
-fetchComponentInstances(
-  `https://api.figma.com/v1/files/${config.FILE}/nodes?ids=${config.PAGES[0]}`,
+fetchComponentInstances(`https://api.figma.com/v1/files/${config.FILE}/nodes?ids=${config.PAGES[0].ID}`,
   config.PAGES[0],
   config.COMPONENT,
   config.TOKEN
