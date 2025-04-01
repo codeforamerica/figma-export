@@ -89,7 +89,10 @@ async function findLayersByName(data, layerName) {
   function searchLayers(node) {
     if (node.type === 'TEXT' && node.name.includes(layerName)) {
       layers.push(node.characters);
-    } else if (node.type === 'TEXT' && node.componentPropertyReferences && node.componentPropertyReferences.characters.includes(layerName)) {
+    } else if (node.type === 'TEXT' &&
+      node.componentPropertyReferences &&
+      node.componentPropertyReferences.characters &&
+      node.componentPropertyReferences.characters.includes(layerName)) {
       layers.push(node.characters);
     }
 
@@ -119,6 +122,13 @@ function getProp(obj, prop) {
   }
 }
 
+/**
+ * [cleanText description]
+ *
+ * @param   {[type]}  str  [str description]
+ *
+ * @return  {[type]}       [return description]
+ */
 function cleanText(str) {
   return str.replace(/\n/g, ' ')
     .replace(/\r/g, ' ')
@@ -138,13 +148,12 @@ function cleanText(str) {
  */
 async function fetchComponentInstances(req, page, componentName, figmaToken) {
   let data = await fetchFigma(req, figmaToken);
-
   let questions = await findComponentByName(data, page, componentName);
+  let fileName = `${config.EXPORT}.${page.ID}`;
 
-  // Write our data so far to check.
-  console.log(`📝 Writing full data copy to ${config.COPY}`);
-
-  fs.writeFile(config.COPY, JSON.stringify(data), 'utf8', () => {});
+  fs.writeFile(`${fileName}.json`, JSON.stringify(data), 'utf8', () => {
+    console.log(`📝 Full data copy written to ${fileName}.json`);
+  });
 
   let body = config.HEADINGS.join(config.DELIMITER) + '\n';
 
@@ -154,8 +163,11 @@ async function fetchComponentInstances(req, page, componentName, figmaToken) {
     let line = [];
 
     // Replace with property configuration
-    line.push(getProp(questions[i].componentProperties, '🟣 ID').replace(/\n/g, '; '));
-    line.push(getProp(questions[i].componentProperties, '🔴 Required'));
+    let id = getProp(questions[i].componentProperties, '🟣 ID');
+    line.push((id) ? id.replace(/\n/g, '; ') : '');
+
+    let required = getProp(questions[i].componentProperties, '🔴 Required');
+    line.push((required) ? required : false);
 
     // Question Text
     let question = await findLayersByName(questions[i], 'Text input label');
@@ -163,12 +175,12 @@ async function fetchComponentInstances(req, page, componentName, figmaToken) {
 
     // Current Question
     let current = await findLayersByName(questions[i], 'Question (Current)');
-    let currentCharacters = cleanText(current[0]);
+    let currentCharacters = (current[0]) ? cleanText(current[0]) : '';
     line.push((currentCharacters === 'Current: Last name') ? '' : currentCharacters);
 
     // No Change
     let noChange = await findLayersByName(questions[i], 'Question (No Change)');
-    let noChangeCharacters = cleanText(noChange[0]);
+    let noChangeCharacters = (noChange[0]) ? cleanText(noChange[0]) : '';
     line.push((noChangeCharacters === 'No Change: Last name') ? '' : noChangeCharacters);
 
     // Flow
@@ -180,14 +192,21 @@ async function fetchComponentInstances(req, page, componentName, figmaToken) {
     body += line.join(config.DELIMITER) + '\n';
   }
 
-  console.log(`✨ Writing export to ${config.EXPORT}`);
+  console.log(`✨ Writing export to ${fileName}.csv`);
 
-  await fs.writeFileSync(config.EXPORT, body, 'utf8');
+  await fs.writeFileSync(`${fileName}.csv`, body, 'utf8');
 }
 
-// Need to replace this with multiple requests
-fetchComponentInstances(`https://api.figma.com/v1/files/${config.FILE}/nodes?ids=${config.PAGES[0].ID}`,
-  config.PAGES[0],
-  config.COMPONENT,
-  config.TOKEN
-);
+
+/**
+ * Init
+ */
+for (let p = 0; p < config.PAGES.length; p++) {
+  const page = config.PAGES[p];
+
+  fetchComponentInstances(`https://api.figma.com/v1/files/${config.FILE}/nodes?ids=${page.ID}`,
+    page,
+    config.COMPONENT,
+    config.TOKEN
+  );
+}

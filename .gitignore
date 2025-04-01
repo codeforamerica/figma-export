@@ -137,5 +137,7 @@ dist
 
 data.json
 data.csv
+*.json
+*.csv
 .config.js
 .DS_Store
