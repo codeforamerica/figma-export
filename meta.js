@@ -66,7 +66,9 @@ async function findLayersByName(data, layerName) {
   let layers = [];
 
   function searchLayers(node) {
-    if (node.type === 'TEXT' && node.componentPropertyReferences && node.componentPropertyReferences.characters.includes(layerName)) {
+    if (node.type === 'TEXT' && node.name.includes(layerName)) {
+      layers.push(node.characters);
+    } else if (node.type === 'TEXT' && node.componentPropertyReferences && node.componentPropertyReferences.characters.includes(layerName)) {
       layers.push(node.characters);
     }
 
@@ -111,9 +113,9 @@ async function fetchComponentInstances(req, componentName, figmaToken) {
   // Write our data so far to check.
   console.log(`📝 Writing full data copy to ${config.COPY}`);
 
-  fs.writeFile(config.COPY, JSON.stringify(questions), 'utf-8', () => {});
+  fs.writeFile(config.COPY, JSON.stringify(questions), 'utf8', () => {});
 
-  let body = 'ID, Required, Question\n';
+  let body = 'ID, Required, Question, Current\n';
 
   console.log(`🛠️  Building export`);
 
@@ -129,12 +131,24 @@ async function fetchComponentInstances(req, componentName, figmaToken) {
     let question = await findLayersByName(questions[i], 'Text input label');
     line.push(question.join(' | '));
 
+    let current = await findLayersByName(questions[i], 'Question (Current)');
+
+    let currentCharacters = current[0]
+      .replace(/\n/g, ' ')
+      .replace(/\r/g, ' ')
+      .replace(/[\u2028]/g, ' ')
+      .replace(/(–)\1+/g, '$1')
+      .split(' – ')
+      .join(' | ');
+
+    line.push(currentCharacters);
+
     body += line.join(', ') + '\n';
   }
 
-  console.log(`✨ Writing export to ${config.EXPORT}!`);
+  console.log(`✨ Writing export to ${config.EXPORT}`);
 
-  fs.writeFile(config.EXPORT, body, 'utf-8', () => {});
+  await fs.writeFileSync(config.EXPORT, body, 'utf8');
 }
 
 // Need to replace this with multiple requests
