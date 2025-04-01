@@ -1,7 +1,7 @@
 const fs = require('fs');
 const config = require('./.config.js');
 
-const documentKey = '11741:224247'; // Need to replace this with something manageable
+let DATA = [];
 
 /**
  * [async description]
@@ -20,22 +20,25 @@ async function fetchFigma(req, figmaToken) {
     }
   });
 
-  let data = await response.json();
+  let pageData = await response.json();
+
+  DATA.push(pageData);
 
   console.log(`✨ Request successful!`);
 
-  return data;
+  return pageData;
 }
 
 /**
  * Get all visible instances of a component by name.
  *
  * @param   {String}  data           JSON to search
+ * @param   {String}  page           ...
  * @param   {String}  componentName  The name of the component to retrieve
  *
  * @return  {Array}                  A list of visible component instances
  */
-async function findComponentByName(data, componentName) {
+async function findComponentByName(data, page, componentName) {
   let questions = [];
 
   console.log(`🔍 Finding visible ${componentName} components in the request`);
@@ -49,7 +52,7 @@ async function findComponentByName(data, componentName) {
   }
 
   // Need to replace documentKey with something manageable
-  searchNodes(data.nodes[documentKey].document);
+  searchNodes(data.nodes[page.split('-').join(':')].document);
 
   return questions;
 }
@@ -102,13 +105,14 @@ function getProp(obj, prop) {
  * Get component instances and build data object for export. Writes files locally.
  *
  * @param   {String}  req            The API request URL
+ * @param   {String}  page           ...
  * @param   {String}  componentName  The name of the component to retrieve
  * @param   {String}  figmaToken     The Figma personal access token to authenticate the request
  */
-async function fetchComponentInstances(req, componentName, figmaToken) {
-  let data = await fetchFigma(req,figmaToken);
+async function fetchComponentInstances(req, page, componentName, figmaToken) {
+  let data = await fetchFigma(req, figmaToken);
 
-  let questions = await findComponentByName(data, componentName);
+  let questions = await findComponentByName(data, page, componentName);
 
   // Write our data so far to check.
   console.log(`📝 Writing full data copy to ${config.COPY}`);
@@ -154,6 +158,7 @@ async function fetchComponentInstances(req, componentName, figmaToken) {
 // Need to replace this with multiple requests
 fetchComponentInstances(
   `https://api.figma.com/v1/files/${config.FILE}/nodes?ids=${config.PAGES[0]}`,
+  config.PAGES[0],
   config.COMPONENT,
   config.TOKEN
 );
