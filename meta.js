@@ -163,7 +163,7 @@ async function fetchComponentInstances(req, page, componentNames, figmaToken) {
     console.log(`📝 Full data copy written to ${fileName}.json`);
   });
 
-  let body = config.HEADINGS.join(config.DELIMITER) + '\n';
+  let body = '';
 
   console.log(`🛠️  Building export and populating the following columns; ${config.HEADINGS.join(', ')}`);
 
@@ -211,9 +211,9 @@ async function fetchComponentInstances(req, page, componentNames, figmaToken) {
 
   console.log(`✨ Writing export to ${fileName}.csv`);
 
-  await fs.writeFileSync(`${fileName}.csv`, body, 'utf8');
+  await fs.writeFileSync(`${fileName}.csv`, config.HEADINGS.join(config.DELIMITER) + '\n' + body, 'utf8');
 
-  return true;
+  return body;
 }
 
 /**
@@ -221,13 +221,17 @@ async function fetchComponentInstances(req, page, componentNames, figmaToken) {
  */
 
 (async function () {
+  let data = config.HEADINGS.join(config.DELIMITER) + '\n';
+
   for (let p = 0; p < config.PAGES.length; p++) {
     const page = config.PAGES[p];
 
-    fetchComponentInstances(`https://api.figma.com/v1/files/${config.FILE}/nodes?ids=${page.ID}`,
+    data += await fetchComponentInstances(`https://api.figma.com/v1/files/${config.FILE}/nodes?ids=${page.ID}`,
       page,
       config.COMPONENTS,
       config.TOKEN
     );
   }
+
+  await fs.writeFileSync(`${config.EXPORT}.csv`, data, 'utf8');
 })();
